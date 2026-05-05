@@ -330,11 +330,7 @@ const DEFAULT_DATA = {
   gold:{oz:0,avgCost:0},silver:{oz:0,avgCost:0},
   retirement:{k401:0,rothIra:0,pension:0},
   cash:[{id:1,label:"Checking",amount:0},{id:2,label:"Savings",amount:0}],
-  debt:[
-    {id:1,label:"Honda Accord",balance:34914,monthly:571},
-    {id:2,label:"Amex",balance:2000,monthly:0},
-    {id:3,label:"Discover",balance:2500,monthly:0},
-  ],
+  debt:[],
 };
 
 // ── Formatters ────────────────────────────────────────────────────────────────
