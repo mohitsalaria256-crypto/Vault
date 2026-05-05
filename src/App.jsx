@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-
 // ── CSS ───────────────────────────────────────────────────────────────────────
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
@@ -298,30 +297,27 @@ input::placeholder{color:var(--text3)!important;}
 .mob-nav-btn.inactive .mob-nav-lbl{color:var(--text3);}
 `;
 
-// ── Firebase SDK via CDN ───────────────────────────────────────────────────────
-let db = null;
-let fbSet, fbGet, fbListen, fbReady = false;
+// ── Firebase ─────────────────────────────────────────────────────────────────
+import { initializeApp, getApps } from "firebase/app";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
 
-async function initFirebase() {
-  try {
-    const { initializeApp, getApps } = await import("https://esm.sh/firebase@10.11.0/app");
-    const { getFirestore, doc, setDoc, getDoc, onSnapshot } = await import("https://esm.sh/firebase@10.11.0/firestore");
-    const cfg = {
-      apiKey:"AIzaSyCc-cNmkbW4HnMotuUGpaAkHQs0mtPbNRo",
-      authDomain:"vault-f328a.firebaseapp.com",
-      projectId:"vault-f328a",
-      storageBucket:"vault-f328a.firebasestorage.app",
-      messagingSenderId:"370299444857",
-      appId:"1:370299444857:web:5dbaff35b47dd48ece7ea8"
-    };
-    const app = getApps().length ? getApps()[0] : initializeApp(cfg);
-    db = getFirestore(app);
-    fbSet = (col, id, data) => setDoc(doc(db, col, id), data);
-    fbGet = async (col, id) => { const s = await getDoc(doc(db, col, id)); return s.exists() ? s.data() : null; };
-    fbListen = (col, id, cb) => onSnapshot(doc(db, col, id), s => { if (s.exists()) cb(s.data()); });
-    fbReady = true;
-  } catch(e) { console.error("Firebase init failed", e); }
-}
+const firebaseConfig = {
+  apiKey:"AIzaSyCc-cNmkbW4HnMotuUGpaAkHQs0mtPbNRo",
+  authDomain:"vault-f328a.firebaseapp.com",
+  projectId:"vault-f328a",
+  storageBucket:"vault-f328a.firebasestorage.app",
+  messagingSenderId:"370299444857",
+  appId:"1:370299444857:web:5dbaff35b47dd48ece7ea8"
+};
+
+const firebaseApp = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+
+const fbSet = (col, id, data) => setDoc(doc(db, col, id), data);
+const fbGet = async (col, id) => { const s = await getDoc(doc(db, col, id)); return s.exists() ? s.data() : null; };
+const fbListen = (col, id, cb) => onSnapshot(doc(db, col, id), s => { if (s.exists()) cb(s.data()); });
+
+async function initFirebase() { return true; }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const SESSION_KEY = "vault-session-v3";
