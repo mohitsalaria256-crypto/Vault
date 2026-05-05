@@ -415,7 +415,7 @@ function AssetRow({icon, label, cost, value, gain, gainPct, onAdd, onEdit, child
   );
 }
 
-function SubRow({label, qty, avgCost, price, value, gain, gainPct, change24h, eod, onRemove}) {
+function SubRow({label, qty, avgCost, price, value, gain, gainPct, change24h, onRemove}) {
   return (
     <div className="sub-row">
       <div style={{width:"130px",flexShrink:0}}>
@@ -749,7 +749,7 @@ function App({username, onLogout}) {
     const value = price ? price*s.shares : cost;
     const gain = price ? value-cost : null;
     const gainPct = (cost>0&&gain!==null) ? (gain/cost)*100 : null;
-    return {...s,price,cost,value,gain,gainPct,change24h:info?.change24h??null,eod:info?.eod||false};
+    return {...s,price,cost,value,gain,gainPct,change24h:info?.change24h??null};
   });
   const cryItems = data.crypto.map(c=>{
     const info = prices.crypto[c.symbol.toUpperCase()];
@@ -872,7 +872,7 @@ function App({username, onLogout}) {
           {TblHdr}
           <AssetRow icon="📈" label="Stocks" cost={stkCost} value={stkVal} gain={stkGain} gainPct={stkGainPct} onAdd={()=>setModal("addStock")}>
             {stkItems.map(s=>(
-              <SubRow key={s.id} label={s.symbol} qty={s.shares} avgCost={s.avgCost} price={s.price} value={s.value} gain={s.gain} gainPct={s.gainPct} change24h={s.change24h} eod={s.eod} onRemove={()=>setData(d=>({...d,stocks:d.stocks.filter(x=>x.id!==s.id)})}/>
+              <SubRow key={s.id} label={s.symbol} qty={s.shares} avgCost={s.avgCost} price={s.price} value={s.value} gain={s.gain} gainPct={s.gainPct} change24h={s.change24h} onRemove={()=>setData(d=>({...d,stocks:d.stocks.filter(x=>x.id!==s.id)}))}/>
             ))}
             {!stkItems.length && <div style={{padding:".8rem 3.2rem",fontSize:".73rem",color:"var(--text3)"}}>No stocks — click + Add</div>}
           </AssetRow>
