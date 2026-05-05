@@ -689,55 +689,39 @@ function App({username, onLogout}) {
       }
     }
 
-    // ── Stocks: Yahoo Finance via multiple CORS proxies ────────────────────
+    // ── Stocks: Claude AI with web search (most reliable) ─────────────────
     const sSyms = data.stocks.map(s=>s.symbol.toUpperCase());
-    const fetchStock = async (sym) => {
-      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`;
-      // Proxy 1: allorigins
-      try {
-        const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`);
-        if (r.ok) {
-          const w = await r.json();
-          const j = JSON.parse(w.contents);
-          const meta = j?.chart?.result?.[0]?.meta;
-          if (meta?.regularMarketPrice) {
-            return { price: meta.regularMarketPrice, change24h: meta.previousClose ? ((meta.regularMarketPrice-meta.previousClose)/meta.previousClose)*100 : null };
-          }
-        }
-      } catch {}
-      // Proxy 2: corsproxy.io
-      try {
-        const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`);
-        if (r.ok) {
-          const j = await r.json();
-          const meta = j?.chart?.result?.[0]?.meta;
-          if (meta?.regularMarketPrice) {
-            return { price: meta.regularMarketPrice, change24h: meta.previousClose ? ((meta.regularMarketPrice-meta.previousClose)/meta.previousClose)*100 : null };
-          }
-        }
-      } catch {}
-      // Proxy 3: Stooq CSV (always works, end-of-day)
-      try {
-        const stooqUrl = `https://stooq.com/q/l/?s=${sym.toLowerCase()}.us&f=sd2t2ohlcv&h&e=csv`;
-        const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(stooqUrl)}`);
-        if (r.ok) {
-          const w = await r.json();
-          const lines = w.contents.trim().split("\n");
-          if (lines.length >= 2) {
-            const cols = lines[1].split(",");
-            const price = parseFloat(cols[6]);
-            const open = parseFloat(cols[3]);
-            if (!isNaN(price) && price > 0) return { price, change24h: open?((price-open)/open)*100:null, eod:true };
-          }
-        }
-      } catch {}
-      return null;
-    };
-
-    // Fetch all stocks in parallel
     if (sSyms.length) {
-      const results = await Promise.all(sSyms.map(sym => fetchStock(sym)));
-      sSyms.forEach((sym,i) => { if(results[i]) next.stocks[sym] = results[i]; });
+      try {
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({
+            model:"claude-sonnet-4-20250514",
+            max_tokens:1000,
+            tools:[{type:"web_search_20250305",name:"web_search"}],
+            messages:[{role:"user",content:`Search for the current live stock prices for these tickers: ${sSyms.join(", ")}. Return ONLY a JSON object like this with no markdown: {"NVDA":{"price":135.50,"change24h":1.25},"AAPL":{"price":213.10,"change24h":-0.34}}`}],
+          }),
+        });
+        if (res.ok) {
+          const d2 = await res.json();
+          const tb = [...d2.content].reverse().find(b=>b.type==="text");
+          if (tb?.text) {
+            const match = tb.text.replace(/\`\`\`json|\`\`\`/g,"").trim().match(/\{[\s\S]*\}/);
+            if (match) {
+              const parsed = JSON.parse(match[0]);
+              sSyms.forEach(sym=>{
+                if (parsed[sym]?.price) {
+                  next.stocks[sym] = {
+                    price: parseFloat(parsed[sym].price),
+                    change24h: parseFloat(parsed[sym].change24h) || null
+                  };
+                }
+              });
+            }
+          }
+        }
+      } catch(e) { console.error("Stock fetch error:", e); }
     }
 
     setPrices(next); setLastUpdated(new Date()); setLoading(false);
