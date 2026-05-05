@@ -328,7 +328,7 @@ const CRYPTO_IDS = {
 const DEFAULT_DATA = {
   stocks:[],crypto:[],
   gold:{oz:0,avgCost:0},silver:{oz:0,avgCost:0},
-  retirement:{k401:0,rothIra:0,pension:0},
+  retirement:{k401:0,rothIra:0,pension:0,k401MyContrib:0,k401CompanyContrib:0,k401YTDMine:0,k401YTDCompany:0},
   cash:[{id:1,label:"Checking",amount:0},{id:2,label:"Savings",amount:0}],
   debt:[],
 };
@@ -552,7 +552,7 @@ function App({username, onLogout}) {
   const [cryptoForm, setCryptoForm] = useState({symbol:"",amount:"",avgCost:""});
   const [goldForm, setGoldForm] = useState({oz:"",avgCost:""});
   const [silverForm, setSilverForm] = useState({oz:"",avgCost:""});
-  const [retForm, setRetForm] = useState({k401:"",rothIra:"",pension:""});
+  const [retForm, setRetForm] = useState({k401:"",rothIra:"",pension:"",k401MyContrib:"",k401CompanyContrib:"",k401YTDMine:"",k401YTDCompany:""});
   const [cashForm, setCashForm] = useState([]);
   const [debtForm, setDebtForm] = useState([]);
   const [acctForm, setAcctForm] = useState({newUser:"",curPw:"",newPw:"",confPw:""});
@@ -605,7 +605,7 @@ function App({username, onLogout}) {
         await fbSet("vaultData", username, {data, updatedAt:Date.now(), savedByUser:username});
         setSyncStatus("ok");
       } catch { setSyncStatus("error"); }
-    }, 800);
+    }, 300);
   },[data, ready]);
 
   // ── Fetch Prices ────────────────────────────────────────────────────────────
@@ -661,21 +661,21 @@ function App({username, onLogout}) {
     next.gold = gPrice;
     next.silver = sPrice;
 
-    // ── Crypto: CoinGecko (free, no key needed) ────────────────────────────
+    // ── Crypto: Multiple sources ────────────────────────────────────────────
     const cSyms = data.crypto.map(c=>c.symbol.toUpperCase());
     const cgIds = cSyms.map(s=>CRYPTO_IDS[s]).filter(Boolean);
     if (cgIds.length) {
-      // Try direct first, then proxied
       let fetched = false;
+      // Source 1: CoinGecko direct
       try {
         const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${cgIds.join(",")}&vs_currencies=usd&include_24hr_change=true`);
         if (r.ok) {
           const j = await r.json();
           cSyms.forEach(sym=>{ const id=CRYPTO_IDS[sym]; if(id&&j[id]) next.crypto[sym]={price:j[id].usd,change24h:j[id].usd_24h_change}; });
-          fetched = true;
+          fetched = Object.keys(next.crypto).length > 0;
         }
       } catch {}
-      // Fallback: proxied CoinGecko
+      // Source 2: CoinGecko via allorigins proxy
       if (!fetched) {
         try {
           const url = `https://api.coingecko.com/api/v3/simple/price?ids=${cgIds.join(",")}&vs_currencies=usd&include_24hr_change=true`;
@@ -684,68 +684,64 @@ function App({username, onLogout}) {
             const w = await r.json();
             const j = JSON.parse(w.contents);
             cSyms.forEach(sym=>{ const id=CRYPTO_IDS[sym]; if(id&&j[id]) next.crypto[sym]={price:j[id].usd,change24h:j[id].usd_24h_change}; });
+            fetched = Object.keys(next.crypto).length > 0;
+          }
+        } catch {}
+      }
+      // Source 3: Binance via allorigins (works globally, no key needed)
+      if (!fetched) {
+        try {
+          const binanceSyms = cSyms.filter(s=>["BTC","ETH","SOL","BNB","XRP","ADA","DOGE","AVAX","DOT","LINK","LTC","MATIC"].includes(s));
+          await Promise.all(binanceSyms.map(async sym => {
+            try {
+              const pair = `${sym}USDT`;
+              const url = `https://api.binance.com/api/v3/ticker/24hr?symbol=${pair}`;
+              const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+              if (r.ok) {
+                const w = await r.json();
+                const j = JSON.parse(w.contents);
+                if (j?.lastPrice && parseFloat(j.lastPrice) > 0) {
+                  next.crypto[sym] = { price: parseFloat(j.lastPrice), change24h: parseFloat(j.priceChangePercent)||null };
+                  fetched = true;
+                }
+              }
+            } catch {}
+          }));
+        } catch {}
+      }
+      // Source 4: CoinCap (free, no key)
+      if (!fetched) {
+        try {
+          for (const sym of cSyms) {
+            const id = CRYPTO_IDS[sym];
+            if (!id) continue;
+            const r = await fetch(`https://api.coincap.io/v2/assets/${id}`);
+            if (r.ok) {
+              const j = await r.json();
+              if (j?.data?.priceUsd > 0) {
+                next.crypto[sym] = { price: parseFloat(j.data.priceUsd), change24h: parseFloat(j.data.changePercent24Hr) };
+              }
+            }
           }
         } catch {}
       }
     }
 
-    // ── Stocks: Multiple free APIs ─────────────────────────────────────────
+    // ── Stocks: Netlify serverless function (server-side, no CORS) ────────
     const sSyms = data.stocks.map(s=>s.symbol.toUpperCase());
     if (sSyms.length) {
-      // Try each stock individually with multiple sources
-      const fetchOneStock = async (sym) => {
-        // Source 1: Finnhub (free, no key needed for basic quotes)
-        try {
-          const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=free`);
-          if (r.ok) {
-            const j = await r.json();
-            if (j?.c > 0) return { price: j.c, change24h: j.pc ? ((j.c-j.pc)/j.pc)*100 : null };
-          }
-        } catch {}
-        // Source 2: Yahoo Finance via allorigins
-        try {
-          const url = `https://query2.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`;
-          const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
-          if (r.ok) {
-            const w = await r.json();
-            const j = JSON.parse(w.contents);
-            const meta = j?.chart?.result?.[0]?.meta;
-            if (meta?.regularMarketPrice > 0) {
-              return { price: meta.regularMarketPrice, change24h: meta.previousClose ? ((meta.regularMarketPrice-meta.previousClose)/meta.previousClose)*100 : null };
-            }
-          }
-        } catch {}
-        // Source 3: Stooq EOD
-        try {
-          const url = `https://stooq.com/q/l/?s=${sym.toLowerCase()}.us&f=sd2t2ohlcv&h&e=csv`;
-          const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
-          if (r.ok) {
-            const w = await r.json();
-            const lines = w.contents.trim().split("\n");
-            if (lines.length >= 2) {
-              const cols = lines[1].split(",");
-              const price = parseFloat(cols[6]);
-              const open = parseFloat(cols[3]);
-              if (!isNaN(price) && price > 0) return { price, change24h: open?((price-open)/open)*100:null };
-            }
-          }
-        } catch {}
-        // Source 4: Yahoo Finance query1
-        try {
-          const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`;
-          const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`);
-          if (r.ok) {
-            const j = await r.json();
-            const meta = j?.chart?.result?.[0]?.meta;
-            if (meta?.regularMarketPrice > 0) {
-              return { price: meta.regularMarketPrice, change24h: meta.previousClose ? ((meta.regularMarketPrice-meta.previousClose)/meta.previousClose)*100 : null };
-            }
-          }
-        } catch {}
-        return null;
-      };
-      const results = await Promise.all(sSyms.map(sym => fetchOneStock(sym)));
-      sSyms.forEach((sym,i) => { if(results[i]) next.stocks[sym] = results[i]; });
+      try {
+        // Call our own Netlify function - runs server-side so Yahoo Finance works perfectly
+        const r = await fetch(`/.netlify/functions/stocks?symbols=${sSyms.join(",")}`);
+        if (r.ok) {
+          const data2 = await r.json();
+          sSyms.forEach(sym => {
+            if (data2[sym]?.price > 0) next.stocks[sym] = data2[sym];
+          });
+        }
+      } catch(e) {
+        console.error("Stock fetch error:", e);
+      }
     }
 
     setPrices(next); setLastUpdated(new Date()); setLoading(false);
@@ -912,13 +908,26 @@ function App({username, onLogout}) {
               {data.silver.oz||0} oz · Live: {prices.silver?fmt(prices.silver):"fetching…"}/oz · Avg cost: ${data.silver.avgCost||0}/oz
             </div>
           </AssetRow>
-          <AssetRow icon="🏦" label="Retirement" cost={retTotal} value={retTotal} gain={null} gainPct={null} onEdit={()=>{setRetForm({k401:data.retirement.k401||"",rothIra:data.retirement.rothIra||"",pension:data.retirement.pension||""});setModal("editRetirement");}}>
-            {[["401(k)",data.retirement.k401],["Roth IRA",data.retirement.rothIra],["Pension",data.retirement.pension]].map(([lbl,val])=>(
+          <AssetRow icon="🏦" label="Retirement" cost={retTotal} value={retTotal} gain={null} gainPct={null} onEdit={()=>{setRetForm({k401:data.retirement.k401||"",rothIra:data.retirement.rothIra||"",pension:data.retirement.pension||"",k401MyContrib:data.retirement.k401MyContrib||"",k401CompanyContrib:data.retirement.k401CompanyContrib||"",k401YTDMine:data.retirement.k401YTDMine||"",k401YTDCompany:data.retirement.k401YTDCompany||""});setModal("editRetirement");}}>
+            {[["401(k) Balance",data.retirement.k401],["Roth IRA",data.retirement.rothIra],["Pension",data.retirement.pension]].map(([lbl,val])=>(
               <div key={lbl} style={{display:"flex",justifyContent:"space-between",padding:".5rem 1rem .5rem 3.2rem",fontSize:".75rem",borderBottom:"1px solid var(--border)"}}>
                 <span style={{color:"var(--text2)"}}>{lbl}</span>
                 <span style={{fontFamily:"'DM Mono',monospace",color:"var(--green)"}}>{fmt(parseFloat(val)||0)}</span>
               </div>
             ))}
+            {(data.retirement.k401MyContrib>0||data.retirement.k401CompanyContrib>0) && (
+              <div style={{padding:".6rem 1rem .6rem 3.2rem",background:"#f8fafd",borderTop:"1px solid var(--border)"}}>
+                <div style={{fontSize:".65rem",fontWeight:700,color:"var(--text3)",textTransform:"uppercase",letterSpacing:".08em",marginBottom:".4rem"}}>401(k) Contributions</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:".5rem"}}>
+                  {[["My Contribution/paycheck",data.retirement.k401MyContrib],["Company Match/paycheck",data.retirement.k401CompanyContrib],["My YTD Total",data.retirement.k401YTDMine],["Company YTD Total",data.retirement.k401YTDCompany]].map(([lbl,val])=>(
+                    <div key={lbl} style={{background:"#fff",borderRadius:"8px",padding:".5rem .75rem",border:"1px solid var(--border)"}}>
+                      <div style={{fontSize:".6rem",color:"var(--text3)",marginBottom:".15rem"}}>{lbl}</div>
+                      <div style={{fontFamily:"'DM Mono',monospace",fontSize:".82rem",fontWeight:600,color:"var(--blue)"}}>{fmt(parseFloat(val)||0)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </AssetRow>
           <AssetRow icon="💵" label="Cash" cost={cashVal} value={cashVal} gain={0} gainPct={0} onEdit={()=>{setCashForm(data.cash.map(c=>({...c})));setModal("editCash");}}>
             {data.cash.map(c=>(
@@ -1186,9 +1195,20 @@ function App({username, onLogout}) {
             <div style={{display:"flex",gap:".5rem",justifyContent:"flex-end",marginTop:"1rem"}}>
               <button className="btn-gho" onClick={()=>setModal(null)}>Cancel</button>
               <button className="btn-pri" onClick={()=>{
-                if(!stockForm.symbol||!stockForm.shares) return;
-                setData(d=>({...d,stocks:[...d.stocks,{id:Date.now(),symbol:stockForm.symbol.toUpperCase().trim(),shares:parseFloat(stockForm.shares),avgCost:parseFloat(stockForm.avgCost)||0}]}));
-                setStockForm({symbol:"",shares:"",avgCost:""});setModal(null);setTimeout(fetchPrices,300);
+                const sym = stockForm.symbol.toUpperCase().trim();
+                const shares = parseFloat(stockForm.shares);
+                const avgCost = parseFloat(stockForm.avgCost)||0;
+                if(!sym||!shares) return;
+                const newStock = {id:Date.now(),symbol:sym,shares,avgCost};
+                setData(d=>{
+                  // Prevent duplicate if symbol already exists
+                  const exists = d.stocks.find(s=>s.symbol===sym);
+                  if(exists) return d;
+                  return {...d,stocks:[...d.stocks,newStock]};
+                });
+                setStockForm({symbol:"",shares:"",avgCost:""});
+                setModal(null);
+                setTimeout(fetchPrices,500);
               }}>Add Stock</button>
             </div>
           </Modal>
@@ -1203,9 +1223,19 @@ function App({username, onLogout}) {
             <div style={{display:"flex",gap:".5rem",justifyContent:"flex-end",marginTop:"1rem"}}>
               <button className="btn-gho" onClick={()=>setModal(null)}>Cancel</button>
               <button className="btn-pri" onClick={()=>{
-                if(!cryptoForm.symbol||!cryptoForm.amount) return;
-                setData(d=>({...d,crypto:[...d.crypto,{id:Date.now(),symbol:cryptoForm.symbol.toUpperCase().trim(),amount:parseFloat(cryptoForm.amount),avgCost:parseFloat(cryptoForm.avgCost)||0}]}));
-                setCryptoForm({symbol:"",amount:"",avgCost:""});setModal(null);setTimeout(fetchPrices,300);
+                const sym = cryptoForm.symbol.toUpperCase().trim();
+                const amount = parseFloat(cryptoForm.amount);
+                const avgCost = parseFloat(cryptoForm.avgCost)||0;
+                if(!sym||!amount) return;
+                const newCrypto = {id:Date.now(),symbol:sym,amount,avgCost};
+                setData(d=>{
+                  const exists = d.crypto.find(c=>c.symbol===sym);
+                  if(exists) return d;
+                  return {...d,crypto:[...d.crypto,newCrypto]};
+                });
+                setCryptoForm({symbol:"",amount:"",avgCost:""});
+                setModal(null);
+                setTimeout(fetchPrices,500);
               }}>Add Crypto</button>
             </div>
           </Modal>
@@ -1235,12 +1265,24 @@ function App({username, onLogout}) {
 
         {modal==="editRetirement" && (
           <Modal title="Edit Retirement Accounts" onClose={()=>setModal(null)}>
-            <Field label="401(k) Balance ($)" type="number" value={retForm.k401} onChange={v=>setRetForm(f=>({...f,k401:v}))} placeholder="50000"/>
+            <div style={{fontSize:".7rem",fontWeight:700,color:"var(--blue)",textTransform:"uppercase",letterSpacing:".08em",marginBottom:".75rem"}}>Account Balances</div>
+            <Field label="401(k) Total Balance ($)" type="number" value={retForm.k401} onChange={v=>setRetForm(f=>({...f,k401:v}))} placeholder="50000"/>
             <Field label="Roth IRA Balance ($)" type="number" value={retForm.rothIra} onChange={v=>setRetForm(f=>({...f,rothIra:v}))} placeholder="15000"/>
             <Field label="Pension / Other ($)" type="number" value={retForm.pension} onChange={v=>setRetForm(f=>({...f,pension:v}))} placeholder="0"/>
+            <div style={{height:"1px",background:"var(--border)",margin:"1rem 0"}}/>
+            <div style={{fontSize:".7rem",fontWeight:700,color:"var(--blue)",textTransform:"uppercase",letterSpacing:".08em",marginBottom:".75rem"}}>401(k) Contribution Tracking</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:".5rem"}}>
+              <Field label="My contribution per paycheck ($)" type="number" value={retForm.k401MyContrib} onChange={v=>setRetForm(f=>({...f,k401MyContrib:v}))} placeholder="200"/>
+              <Field label="Company match per paycheck ($)" type="number" value={retForm.k401CompanyContrib} onChange={v=>setRetForm(f=>({...f,k401CompanyContrib:v}))} placeholder="100"/>
+              <Field label="My YTD contributions ($)" type="number" value={retForm.k401YTDMine} onChange={v=>setRetForm(f=>({...f,k401YTDMine:v}))} placeholder="2400"/>
+              <Field label="Company YTD match ($)" type="number" value={retForm.k401YTDCompany} onChange={v=>setRetForm(f=>({...f,k401YTDCompany:v}))} placeholder="1200"/>
+            </div>
+            <div style={{background:"#f0f7ff",border:"1px solid #bfdbfe",borderRadius:"10px",padding:".75rem",marginTop:".75rem",fontSize:".72rem",color:"#1d4ed8"}}>
+              💡 YTD 2025 limit: <strong>$23,500</strong> employee · <strong>$46,750</strong> combined (with employer match)
+            </div>
             <div style={{display:"flex",gap:".5rem",justifyContent:"flex-end",marginTop:"1rem"}}>
               <button className="btn-gho" onClick={()=>setModal(null)}>Cancel</button>
-              <button className="btn-pri" onClick={()=>{setData(d=>({...d,retirement:{k401:parseFloat(retForm.k401)||0,rothIra:parseFloat(retForm.rothIra)||0,pension:parseFloat(retForm.pension)||0}}));setModal(null);}}>Save</button>
+              <button className="btn-pri" onClick={()=>{setData(d=>({...d,retirement:{k401:parseFloat(retForm.k401)||0,rothIra:parseFloat(retForm.rothIra)||0,pension:parseFloat(retForm.pension)||0,k401MyContrib:parseFloat(retForm.k401MyContrib)||0,k401CompanyContrib:parseFloat(retForm.k401CompanyContrib)||0,k401YTDMine:parseFloat(retForm.k401YTDMine)||0,k401YTDCompany:parseFloat(retForm.k401YTDCompany)||0}}));setModal(null);}}>Save</button>
             </div>
           </Modal>
         )}
