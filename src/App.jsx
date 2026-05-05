@@ -299,7 +299,7 @@ input::placeholder{color:var(--text3)!important;}
 
 // ── Firebase ─────────────────────────────────────────────────────────────────
 import { initializeApp, getApps } from "firebase/app";
-import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, deleteDoc } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey:"AIzaSyCc-cNmkbW4HnMotuUGpaAkHQs0mtPbNRo",
@@ -563,7 +563,8 @@ function App({username, onLogout}) {
     async function load() {
       try {
         const saved = await fbGet("vaultData", username);
-        if (saved?.data) {
+        // Only load if this user has actually saved data before
+        if (saved?.data && saved?.savedByUser === username) {
           const p = saved.data;
           setData(d=>({...DEFAULT_DATA,...p,
             gold:{...DEFAULT_DATA.gold,...p.gold},
@@ -571,12 +572,14 @@ function App({username, onLogout}) {
             retirement:{...DEFAULT_DATA.retirement,...p.retirement},
           }));
         }
+        // If no data exists for this user, they get a clean empty slate
       } catch {}
       setReady(true);
       // Real-time listener
       if (fbListen) {
         unsubRef.current = fbListen("vaultData", username, (d)=>{
-          if (d?.data) {
+          // Only apply data if it belongs to this user
+          if (d?.data && d?.savedByUser === username) {
             const p = d.data;
             setData(prev=>({...DEFAULT_DATA,...p,
               gold:{...DEFAULT_DATA.gold,...p.gold},
@@ -599,7 +602,7 @@ function App({username, onLogout}) {
     saveTimer.current = setTimeout(async()=>{
       setSyncStatus("syncing");
       try {
-        await fbSet("vaultData", username, {data, updatedAt:Date.now()});
+        await fbSet("vaultData", username, {data, updatedAt:Date.now(), savedByUser:username});
         setSyncStatus("ok");
       } catch { setSyncStatus("error"); }
     }, 800);
@@ -1068,6 +1071,43 @@ function App({username, onLogout}) {
               </div>
             </div>
             {acctMsg.text && <div className={acctMsg.type==="ok"?"msg-ok":"msg-err"}>{acctMsg.text}</div>}
+
+            {/* Delete Account */}
+            <div style={{marginTop:"1.5rem",paddingTop:"1.25rem",borderTop:"1px solid var(--border)"}}>
+              <div style={{fontSize:".78rem",fontWeight:600,color:"var(--red)",marginBottom:".5rem"}}>⚠️ Danger Zone</div>
+              <div style={{background:"var(--red-bg)",border:"1px solid #fecaca",borderRadius:"12px",padding:"1.1rem"}}>
+                <div style={{fontSize:".82rem",fontWeight:600,color:"var(--red)",marginBottom:".25rem"}}>Delete Account</div>
+                <div style={{fontSize:".72rem",color:"#9f1239",marginBottom:".85rem"}}>This will permanently delete your account and ALL your financial data. This cannot be undone.</div>
+                <div style={{marginBottom:".5rem"}}>
+                  <div className="f-lbl" style={{color:"#9f1239"}}>Enter your password to confirm</div>
+                  <input className="acct-inp" type="password" value={acctForm.curPw}
+                    onChange={e=>setAcctForm(f=>({...f,curPw:e.target.value}))}
+                    placeholder="Your password"
+                    style={{borderColor:"#fecaca",background:"#fff"}}
+                  />
+                </div>
+                <button onClick={async()=>{
+                  setAcctMsg({text:"",type:""});
+                  if(!acctForm.curPw){setAcctMsg({text:"Enter your password to confirm deletion",type:"err"});return;}
+                  const auth = await fbGet("vaultAuth", username);
+                  if(!auth){setAcctMsg({text:"Account not found",type:"err"});return;}
+                  if(auth.password !== acctForm.curPw.toUpperCase()){setAcctMsg({text:"Incorrect password",type:"err"});return;}
+                  if(!window.confirm("Are you sure? This will delete EVERYTHING permanently.")){return;}
+                  try {
+                    await deleteDoc(doc(db, "vaultAuth", username));
+                    await deleteDoc(doc(db, "vaultData", username));
+                    lsSet(SESSION_KEY, {});
+                    onLogout();
+                  } catch(e) {
+                    setAcctMsg({text:"Failed to delete account. Try again.",type:"err"});
+                  }
+                }} style={{
+                  background:"var(--red)",color:"#fff",border:"none",borderRadius:"8px",
+                  padding:".55rem 1.1rem",fontSize:".78rem",fontWeight:700,cursor:"pointer",
+                  fontFamily:"'Inter',sans-serif",letterSpacing:".04em"
+                }}>🗑 Delete My Account</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
