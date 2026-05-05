@@ -527,7 +527,11 @@ function LoginScreen({onLogin}) {
         </button>
 
         <div className="divider"/>
-        <div style={{textAlign:"center",fontSize:".75rem",color:"var(--text3)"}}>
+        <div style={{textAlign:"center",fontSize:".72rem",color:"var(--text3)",display:"flex",alignItems:"center",justifyContent:"center",gap:"5px",marginTop:".85rem"}}>
+          <span style={{color:"#10b981",fontSize:"10px"}}>●</span>
+          <span>Synced across all your devices via Firebase</span>
+        </div>
+        <div style={{display:"none"}}>
           {mode==="login" ? "Don't have an account? " : "Already have an account? "}
           <button onClick={()=>{setMode(m=>m==="login"?"setup":"login");setError("");}}
             style={{background:"none",border:"none",color:"var(--blue)",cursor:"pointer",fontWeight:600,fontSize:".75rem"}}>
