@@ -618,9 +618,9 @@ function App({username, onLogout}) {
       // Source 1: metals.live
       try {
         const r = await fetch(`https://api.metals.live/v1/spot/${metal}`);
-        if (r.ok) { const j=await r.json(); const p=j[0]?.price; if(p>0) return p; }
+        if (r.ok) { const j=await r.json(); const p=j[0]?.price; if(p>100) return p; }
       } catch {}
-      // Source 2: allorigins proxy → goldprice.org
+      // Source 2: goldprice.org via allorigins
       try {
         const url = "https://data-asg.goldprice.org/dbXRates/USD";
         const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
@@ -631,14 +631,27 @@ function App({username, onLogout}) {
           if (metal==="silver" && j?.items?.[0]?.xagPrice) return j.items[0].xagPrice;
         }
       } catch {}
-      // Source 3: frankfurter via allorigins (XAU/XAG rates)
+      // Source 3: Exchange rate API for XAU/XAG
       try {
         const sym = metal==="gold"?"XAU":"XAG";
-        const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(`https://api.frankfurter.app/latest?from=${sym}&to=USD`)}`);
+        const url = `https://open.er-api.com/v6/latest/${sym}`;
+        const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
         if (r.ok) {
           const w = await r.json();
           const j = JSON.parse(w.contents);
           if (j?.rates?.USD) return j.rates.USD;
+        }
+      } catch {}
+      // Source 4: Yahoo Finance for GC=F (gold futures) via allorigins
+      try {
+        const sym = metal==="gold"?"GC%3DF":"SI%3DF";
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`;
+        const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+        if (r.ok) {
+          const w = await r.json();
+          const j = JSON.parse(w.contents);
+          const price = j?.chart?.result?.[0]?.meta?.regularMarketPrice;
+          if (price && price > 100) return price;
         }
       } catch {}
       return null;
