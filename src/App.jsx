@@ -411,7 +411,7 @@ function AssetRow({icon, label, cost, value, gain, gainPct, onAdd, onEdit, child
   );
 }
 
-function SubRow({label, qty, avgCost, price, value, gain, gainPct, change24h, onRemove}) {
+function SubRow({label, qty, avgCost, price, value, gain, gainPct, change24h, onRemove, onEdit}) {
   return (
     <div className="sub-row">
       <div style={{width:"130px",flexShrink:0}}>
@@ -424,7 +424,10 @@ function SubRow({label, qty, avgCost, price, value, gain, gainPct, change24h, on
         <Badge pct={change24h}/>
       </div>
       <div style={{flex:1}}><ReturnDisplay gain={gain} pct={gainPct}/></div>
-      <button className="btn-del" onClick={onRemove}>✕</button>
+      <div style={{display:"flex",gap:"4px",flexShrink:0}}>
+        <button className="btn-edit" onClick={onEdit} style={{padding:".2rem .5rem",fontSize:".65rem"}}>Edit</button>
+        <button className="btn-del" onClick={onRemove}>✕</button>
+      </div>
     </div>
   );
 }
@@ -553,6 +556,8 @@ function App({username, onLogout}) {
   const [goldForm, setGoldForm] = useState({oz:"",avgCost:""});
   const [silverForm, setSilverForm] = useState({oz:"",avgCost:""});
   const [retForm, setRetForm] = useState({k401:"",rothIra:"",pension:"",k401MyContrib:"",k401CompanyContrib:"",k401YTDMine:"",k401YTDCompany:""});
+  const [editStockForm, setEditStockForm] = useState({id:null,symbol:"",shares:"",avgCost:""});
+  const [editCryptoForm, setEditCryptoForm] = useState({id:null,symbol:"",amount:"",avgCost:""});
   const [cashForm, setCashForm] = useState([]);
   const [debtForm, setDebtForm] = useState([]);
   const [acctForm, setAcctForm] = useState({newUser:"",curPw:"",newPw:"",confPw:""});
@@ -888,13 +893,13 @@ function App({username, onLogout}) {
           {TblHdr}
           <AssetRow icon="📈" label="Stocks" cost={stkCost} value={stkVal} gain={stkGain} gainPct={stkGainPct} onAdd={()=>setModal("addStock")}>
             {stkItems.map(s=>(
-              <SubRow key={s.id} label={s.symbol} qty={s.shares} avgCost={s.avgCost} price={s.price} value={s.value} gain={s.gain} gainPct={s.gainPct} change24h={s.change24h} onRemove={()=>setData(d=>({...d,stocks:d.stocks.filter(x=>x.id!==s.id)}))}/>
+              <SubRow key={s.id} label={s.symbol} qty={s.shares} avgCost={s.avgCost} price={s.price} value={s.value} gain={s.gain} gainPct={s.gainPct} change24h={s.change24h} onRemove={()=>setData(d=>({...d,stocks:d.stocks.filter(x=>x.id!==s.id)}))} onEdit={()=>{setEditStockForm({id:s.id,symbol:s.symbol,shares:s.shares,avgCost:s.avgCost});setModal("editStock");}}/>
             ))}
             {!stkItems.length && <div style={{padding:".8rem 3.2rem",fontSize:".73rem",color:"var(--text3)"}}>No stocks — click + Add</div>}
           </AssetRow>
           <AssetRow icon="₿" label="Crypto" cost={cryCost} value={cryVal} gain={cryGain} gainPct={cryGainPct} onAdd={()=>setModal("addCrypto")}>
             {cryItems.map(c=>(
-              <SubRow key={c.id} label={c.symbol} qty={c.amount} avgCost={c.avgCost} price={c.price} value={c.value} gain={c.gain} gainPct={c.gainPct} change24h={c.change24h} onRemove={()=>setData(d=>({...d,crypto:d.crypto.filter(x=>x.id!==c.id)}))}/>
+              <SubRow key={c.id} label={c.symbol} qty={c.amount} avgCost={c.avgCost} price={c.price} value={c.value} gain={c.gain} gainPct={c.gainPct} change24h={c.change24h} onRemove={()=>setData(d=>({...d,crypto:d.crypto.filter(x=>x.id!==c.id)}))} onEdit={()=>{setEditCryptoForm({id:c.id,symbol:c.symbol,amount:c.amount,avgCost:c.avgCost});setModal("editCrypto");}}/>
             ))}
             {!cryItems.length && <div style={{padding:".8rem 3.2rem",fontSize:".73rem",color:"var(--text3)"}}>No crypto — click + Add</div>}
           </AssetRow>
