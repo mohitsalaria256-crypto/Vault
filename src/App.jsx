@@ -527,10 +527,10 @@ function LoginScreen({onLogin}) {
           <span style={{color:"#10b981",fontSize:"10px"}}>●</span>
           <span>Synced across all your devices via Firebase</span>
         </div>
-        <div style={{display:"none"}}>
-          {mode==="login" ? "Don't have an account? " : "Already have an account? "}
+        <div style={{textAlign:"center",marginTop:".5rem"}}>
+          <span style={{fontSize:".78rem",color:"var(--text3)"}}>{mode==="login" ? "New here? " : "Have an account? "}</span>
           <button onClick={()=>{setMode(m=>m==="login"?"setup":"login");setError("");}}
-            style={{background:"none",border:"none",color:"var(--blue)",cursor:"pointer",fontWeight:600,fontSize:".75rem"}}>
+            style={{background:"none",border:"none",color:"var(--blue)",cursor:"pointer",fontWeight:700,fontSize:".82rem",textDecoration:"underline"}}>
             {mode==="login"?"Create one":"Sign in"}
           </button>
         </div>
